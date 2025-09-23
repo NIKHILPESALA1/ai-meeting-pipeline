@@ -2,55 +2,65 @@ pipeline {
     agent any
 
     environment {
-        IMAGE = "ai_meeting_pipeline:latest"
-        WORKSPACE_DIR = "${WORKSPACE}" // Jenkins workspace
+        IMAGE_NAME = "ai_meeting_pipeline"
+        IMAGE_TAG = "latest"
+        REGISTRY = "nikhilpesala" // change this to your registry
+        FULL_IMAGE = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
     }
 
     stages {
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                echo "Pulling latest code and videos from GitHub..."
-                checkout scm
+                git url: 'https://github.com/NIKHILPESALA1/ai-meeting-pipeline.git', branch: 'main'
+            }
+        }
+
+        stage('Pull Existing Image') {
+            steps {
+                script {
+                    // Try to pull existing image to use as cache
+                    sh """
+                        docker pull ${FULL_IMAGE} || echo "No existing image found, will build"
+                    """
+                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                echo "Building the pipeline Docker image..."
-                sh """
-                docker build -t $IMAGE .
-                """
+                script {
+                    sh """
+                        docker build \
+                        --cache-from ${FULL_IMAGE} \
+                        -t ${FULL_IMAGE} .
+                    """
+                }
             }
         }
 
-        stage('Run Pipeline in Container') {
+        stage('Push Docker Image') {
             steps {
-                echo "Running AI pipeline inside container..."
-                sh """
-                docker run --rm \
-                  -v $WORKSPACE_DIR:/app/data \
-                  $IMAGE bash -c '
-                      cd /app/data &&
-                      git lfs pull &&
-                      python /app/scripts/extract_audio.py &&
-                      python /app/scripts/transcribe.py &&
-                      python /app/scripts/summarize_extract.py
-                  '
-                """
+                script {
+                    sh """
+                        docker login -u ${DOCKERHUB_USER} -p ${DOCKERHUB_PASS}
+                        docker push ${FULL_IMAGE}
+                    """
+                }
             }
         }
 
-        stage('Archive Results') {
+        stage('Run Container') {
             steps {
-                echo "Archiving transcripts and summaries..."
-                archiveArtifacts artifacts: 'data/summaries/*.json, data/transcripts/*.txt', fingerprint: true
+                sh """
+                    docker run -d --name ai_meeting_app -p 5000:5000 ${FULL_IMAGE}
+                """
             }
         }
     }
 
     post {
         always {
-            echo "Pipeline finished. Summaries & transcripts archived from container."
+            sh 'docker system prune -f'
         }
     }
 }
