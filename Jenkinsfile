@@ -18,17 +18,25 @@ pipeline {
             }
         }
 
-        stage('Run Pipeline in Container') {
-            steps {
-                sh '''
-                docker run --rm $IMAGE bash -c "
-                    python /app/scripts/extract_audio.py &&
-                    python /app/scripts/transcribe.py &&
-                    python /app/scripts/summarize_extract.py
-                "
-                '''
-            }
-        }
+       stage('Run Pipeline in Container') {
+    steps {
+        // Ensure LFS files are pulled on the host before running the container
+        sh '''
+        git lfs install
+        git lfs pull
+        '''
+
+        // Run the container with data mounted
+        sh '''
+        docker run --rm -v $DATA_DIR:/app/data $IMAGE bash -c "
+            python /app/scripts/extract_audio.py &&
+            python /app/scripts/transcribe.py &&
+            python /app/scripts/summarize_extract.py
+        "
+        '''
+    }
+}
+
 
         stage('Archive Results') {
             steps {
