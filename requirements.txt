@@ -1,6 +1,8 @@
+openai-whisper==20250625
 torch
-torchaudio
-transformers
-whisper
-spacy
-simple-salesforce
+tqdm
+numpy
+more-itertools
+tiktoken
+triton
+ffmpeg-python
