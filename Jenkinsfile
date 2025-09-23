@@ -3,7 +3,6 @@ pipeline {
 
     environment {
         IMAGE = "ai_meeting_pipeline:latest"
-        DATA_DIR = "${WORKSPACE}/data"
     }
 
     stages {
@@ -15,36 +14,32 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh '''
-                docker build -t $IMAGE .
-                '''
+                sh 'docker build -t $IMAGE .'
             }
         }
 
         stage('Run Pipeline in Container') {
             steps {
                 sh '''
-                docker run --rm \
-                  -v $DATA_DIR:/app/data \
-                  $IMAGE bash -c "
-                    python scripts/extract_audio.py &&
-                    python scripts/transcribe.py &&
-                    python scripts/summarize_extract.py
-                  "
+                docker run --rm $IMAGE bash -c "
+                    python /app/scripts/extract_audio.py &&
+                    python /app/scripts/transcribe.py &&
+                    python /app/scripts/summarize_extract.py
+                "
                 '''
             }
         }
 
         stage('Archive Results') {
             steps {
-                archiveArtifacts artifacts: 'data/summaries/*.json, data/transcripts/*.txt', fingerprint: true
+                archiveArtifacts artifacts: 'data/transcripts/*.txt, data/summaries/*.json', fingerprint: true
             }
         }
     }
 
     post {
         always {
-            echo "Pipeline finished. Summaries & transcripts archived from container."
+            echo "Pipeline finished. Results are archived in Jenkins and available inside the container."
         }
     }
 }
