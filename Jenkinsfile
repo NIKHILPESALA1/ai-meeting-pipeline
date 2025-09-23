@@ -3,37 +3,40 @@ pipeline {
 
     environment {
         IMAGE = "ai_meeting_pipeline:latest"
-        DATA_DIR = "${WORKSPACE}/data"
+        WORKSPACE_DIR = "${WORKSPACE}" // Jenkins workspace
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
                 echo "Pulling latest code and videos from GitHub..."
                 checkout scm
             }
         }
 
-        stage('Fetch LFS Videos') {
+        stage('Build Docker Image') {
             steps {
-                echo "Ensuring Git LFS videos are pulled..."
-                sh '''
-                git lfs install
-                git lfs pull
-                '''
+                echo "Building the pipeline Docker image..."
+                sh """
+                docker build -t $IMAGE .
+                """
             }
         }
 
         stage('Run Pipeline in Container') {
             steps {
-                echo "Processing videos in Docker container..."
-                sh '''
-                docker run --rm -v $WORKSPACE:/app $IMAGE bash -c "
-                    python /app/scripts/extract_audio.py &&
-                    python /app/scripts/transcribe.py &&
-                    python /app/scripts/summarize_extract.py
-                "
-                '''
+                echo "Running AI pipeline inside container..."
+                sh """
+                docker run --rm \
+                  -v $WORKSPACE_DIR:/app/data \
+                  $IMAGE bash -c '
+                      cd /app/data &&
+                      git lfs pull &&
+                      python /app/scripts/extract_audio.py &&
+                      python /app/scripts/transcribe.py &&
+                      python /app/scripts/summarize_extract.py
+                  '
+                """
             }
         }
 
