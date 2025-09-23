@@ -1,0 +1,9 @@
+I am Mr So also myself Nikhil Pasala I am currently pursuing my bachelor's in computer
+science and engineering at value institute of technology Chennai I hold a CGP of 9.07
+I am originally from Nellur city non-privileged state and I have completed my primary education
+my intermediate education from my native place so moving on to my technical skills I am
+familiar with Java language and cloud technologies like AWS and at present I am attending the
+workshops based on Salesforce conducted by a BWC company and coming on to my projects
+I have done multiple projects which includes technologies like machine learning and AWS
+services like S3 and S3 Lambda and APA gateways and I have done a file compression project
+using Huffman coding and I have completed a project which includes algorithms like
