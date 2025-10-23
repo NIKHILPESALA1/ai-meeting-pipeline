@@ -1,8 +1,11 @@
 openai-whisper==20250625
 torch
+torchaudio
+transformers
 tqdm
 numpy
 more-itertools
 tiktoken
 triton
 ffmpeg-python
+requests
