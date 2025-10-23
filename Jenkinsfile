@@ -6,8 +6,8 @@ pipeline {
         IMAGE_TAG = "latest"
         REGISTRY = "nikhilpesala"
         FULL_IMAGE = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
-        DATA_DIR = "/root/.jenkins/workspace/${JOB_NAME}/data"
         SF_INSTANCE_URL = "https://login.salesforce.com"
+        CONTAINER_NAME = "ai_meeting_pipeline_${env.BUILD_ID}" // Dynamic container name per build
     }
 
     triggers {
@@ -15,14 +15,6 @@ pipeline {
     }
 
     stages {
-
-        stage('Prepare Workspace') {
-            steps {
-                script {
-                    sh "mkdir -p ${DATA_DIR}/meetings"
-                }
-            }
-        }
 
         stage('Checkout') {
             steps {
@@ -41,26 +33,21 @@ pipeline {
         }
 
         stage('Run Container') {
-    steps {
-        script {
-            sh """
-                # Remove old container if exists
-                docker rm -f ai_meeting_pipeline2 || true
-
-                # Run new container and create meetings folder inside
-                docker run -d --name ai_meeting_pipeline2 \
-                -v ${DATA_DIR}:/app/data \
-                ${FULL_IMAGE} bash -c "mkdir -p /app/data/meetings && tail -f /dev/null"
-            """
+            steps {
+                script {
+                    sh """
+                        docker run -d --name ${CONTAINER_NAME} \
+                        -v \$(pwd)/data:/app/data \
+                        ${FULL_IMAGE} bash -c "mkdir -p /app/data/meetings && tail -f /dev/null"
+                    """
+                }
+            }
         }
-    }
-}
-
 
         stage('Process New Videos') {
             steps {
                 sh """
-                    docker exec ai_meeting_pipeline2 python3 scripts/process_new_videos.py
+                    docker exec ${CONTAINER_NAME} python3 scripts/process_new_videos.py
                 """
             }
         }
@@ -74,7 +61,7 @@ pipeline {
             }
             steps {
                 sh """
-                    docker exec ai_meeting_pipeline2 python3 scripts/push_to_salesforce.py
+                    docker exec ${CONTAINER_NAME} python3 scripts/push_to_salesforce.py
                 """
             }
         }
@@ -83,9 +70,9 @@ pipeline {
     post {
         always {
             echo "Cleaning up Docker container..."
-            sh 'docker stop ai_meeting_pipeline2 || true'
-            sh 'docker rm ai_meeting_pipeline2 || true'
-            sh 'docker system prune -f'
+            sh "docker stop ${CONTAINER_NAME} || true"
+            sh "docker rm ${CONTAINER_NAME} || true"
+            sh "docker system prune -f"
         }
     }
 }
