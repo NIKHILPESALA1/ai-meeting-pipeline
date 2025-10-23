@@ -44,16 +44,21 @@ pipeline {
         }
 
         stage('Run Container') {
-            steps {
-                script {
-                    sh """
-                        docker run -d --name ai_meeting_pipeline2 \
-                        -v ${DATA_DIR}:/app/data \
-                        ${FULL_IMAGE} bash -c "tail -f /dev/null"
-                    """
-                }
-            }
+    steps {
+        script {
+            sh """
+                # Remove any previous container with same name
+                docker rm -f ai_meeting_pipeline2 || true
+
+                # Run new container
+                docker run -d --name ai_meeting_pipeline2 \
+                -v ${DATA_DIR}:/app/data \
+                ${FULL_IMAGE} bash -c "tail -f /dev/null"
+            """
         }
+    }
+}
+
 
         stage('Process New Videos') {
             steps {
