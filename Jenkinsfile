@@ -1,6 +1,12 @@
 pipeline {
     agent any
 
+    environment {
+        CONTAINER_NAME = "ai_meeting_pipeline"
+        VIDEO_DIR = "data/meetings"
+        PROCESSED_DIR = "/app/data/processed"
+    }
+
     stages {
         stage('Checkout SCM') {
             steps {
@@ -8,41 +14,34 @@ pipeline {
             }
         }
 
-        stage('Check for Video Changes') {
+        stage('Check for New Videos') {
             steps {
                 script {
-                    echo "🔍 Checking for new or modified video files (.mp4) in data/meetings..."
-                    // Use single quotes to avoid Groovy interpreting $
+                    echo "Checking for new or modified video files (.mp4) in ${VIDEO_DIR}..."
                     NEW_VIDEOS = sh(
-                        script: 'git diff-tree --no-commit-id --name-only -r HEAD | grep ^data/meetings/.*\\.mp4$ || true',
+                        script: "git diff-tree --no-commit-id --name-only -r HEAD | grep '^${VIDEO_DIR}/.*\\.mp4\$' || true",
                         returnStdout: true
                     ).trim()
-                    
-                    if (NEW_VIDEOS) {
-                        echo "✅ New video(s) detected:\n${NEW_VIDEOS}"
-                    } else {
-                        echo "ℹ️ No new videos detected."
-                    }
+                    echo "New video(s) detected:\n${NEW_VIDEOS}"
                 }
             }
         }
 
         stage('Pull Docker Image') {
             steps {
-                script {
-                    sh 'docker pull nikhilpesala/ai_meeting_pipeline:latest'
-                }
+                sh "docker pull nikhilpesala/ai_meeting_pipeline:latest"
             }
         }
 
         stage('Run Container') {
             steps {
                 script {
-                    echo "🚀 Starting Docker container ai_meeting_pipeline..."
-                    sh '''
-                        docker ps -a -q -f name=ai_meeting_pipeline | grep . && docker rm -f ai_meeting_pipeline || true
-                        docker run -d --name ai_meeting_pipeline -v $PWD/data:/app/data --memory=4g nikhilpesala/ai_meeting_pipeline:latest bash -c "mkdir -p /app/data/meetings && tail -f /dev/null"
-                    '''
+                    def containerExists = sh(script: "docker ps -a -q -f name=${CONTAINER_NAME}", returnStdout: true).trim()
+                    if (!containerExists) {
+                        sh "docker run -d --name ${CONTAINER_NAME} -v \${WORKSPACE}/data:/app/data --memory=4g nikhilpesala/ai_meeting_pipeline:latest bash -c 'mkdir -p ${PROCESSED_DIR} && tail -f /dev/null'"
+                    } else {
+                        sh "docker start ${CONTAINER_NAME}"
+                    }
                 }
             }
         }
@@ -53,21 +52,25 @@ pipeline {
             }
             steps {
                 script {
-                    echo "📂 Copying detected videos into the container..."
                     NEW_VIDEOS.split('\n').each { video ->
-                        sh "docker cp ${video} ai_meeting_pipeline:/app/data/meetings/"
+                        sh "docker cp ${video} ${CONTAINER_NAME}:/app/data/meetings/"
                     }
                 }
             }
         }
 
-        stage('Process New Videos') {
+        stage('Transcribe and Summarize') {
             when {
                 expression { return NEW_VIDEOS != "" }
             }
             steps {
-                echo "🎬 Processing new videos..."
-                // Your video processing commands here
+                script {
+                    echo "Transcribing and summarizing new videos..."
+                    NEW_VIDEOS.split('\n').each { video ->
+                        def filename = video.split('/')[-1]
+                        sh "docker exec ${CONTAINER_NAME} python /app/scripts/process_new_videos.py /app/data/meetings/${filename} /app/data/processed/${filename}.json"
+                    }
+                }
             }
         }
 
@@ -76,20 +79,17 @@ pipeline {
                 expression { return NEW_VIDEOS != "" }
             }
             steps {
-                echo "📤 Pushing summarized output..."
-                // Your Salesforce push commands here
+                sh "docker exec ${CONTAINER_NAME} python /app/scripts/push_to_salesforce.py ${PROCESSED_DIR}"
             }
         }
     }
 
     post {
         always {
-            echo "🧹 Cleaning up Docker container..."
-            sh '''
-                docker stop ai_meeting_pipeline || true
-                docker rm ai_meeting_pipeline || true
-                docker system prune -f
-            '''
+            echo "Cleaning up Docker container..."
+            sh "docker stop ${CONTAINER_NAME} || true"
+            sh "docker rm ${CONTAINER_NAME} || true"
+            sh "docker system prune -f"
         }
     }
 }
