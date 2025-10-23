@@ -7,6 +7,7 @@ pipeline {
         REGISTRY = "nikhilpesala"
         FULL_IMAGE = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
         SF_INSTANCE_URL = "https://login.salesforce.com"
+        DATA_DIR = "${WORKSPACE}/data"
     }
 
     triggers {
@@ -14,6 +15,17 @@ pipeline {
     }
 
     stages {
+
+        stage('Prepare Workspace') {
+            steps {
+                script {
+                    // Ensure data and meetings folder exist
+                    sh """
+                        mkdir -p ${DATA_DIR}/meetings
+                    """
+                }
+            }
+        }
 
         stage('Checkout') {
             steps {
@@ -35,7 +47,9 @@ pipeline {
             steps {
                 script {
                     sh """
-                        docker run -d --name ai_meeting_pipeline2 -v \$(pwd)/data:/app/data ${FULL_IMAGE} bash -c "tail -f /dev/null"
+                        docker run -d --name ai_meeting_pipeline2 \
+                        -v ${DATA_DIR}:/app/data \
+                        ${FULL_IMAGE} bash -c "tail -f /dev/null"
                     """
                 }
             }
@@ -49,7 +63,10 @@ pipeline {
             }
         }
 
-        stage('Push to Salesforce') {
+        stage('Push Summarized Output to Salesforce') {
+            when {
+                expression { fileExists("${DATA_DIR}/summarized_output.txt") }
+            }
             environment {
                 SF_CLIENT_ID     = credentials('SF_CLIENT_ID')
                 SF_CLIENT_SECRET = credentials('SF_CLIENT_SECRET')
