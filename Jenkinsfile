@@ -1,40 +1,29 @@
 pipeline {
     agent any
 
-    triggers {
-        githubPush()   // Still trigger on push — we’ll filter inside the pipeline
-    }
-
     environment {
-        DATA_DIR = "${WORKSPACE}/data"
-        CONTAINER_NAME = "ai_meeting_pipeline_6"
-        IMAGE_NAME = "nikhilpesala/ai_meeting_pipeline:latest"
+        CONTAINER_NAME = "ai_meeting_pipeline"
+        DATA_DIR = "${env.WORKSPACE}/data"
+        DOCKER_IMAGE = "nikhilpesala/ai_meeting_pipeline:latest"
     }
 
     stages {
-
-        stage('Checkout') {
+        stage('Checkout SCM') {
             steps {
-                git branch: 'main', url: 'https://github.com/NIKHILPESALA1/ai-meeting-pipeline.git'
+                checkout scm
             }
         }
 
         stage('Check for Video Changes') {
             steps {
                 script {
-                    echo "🔍 Checking for new or modified video files (.mp4)..."
-                    def changed = sh(
-                        script: "git diff-tree --no-commit-id --name-only -r HEAD | grep '.mp4' || true",
-                        returnStdout: true
-                    ).trim()
-
-                    if (!changed) {
-                        echo "🟡 No new or updated video files detected. Skipping the rest of the pipeline."
-                        currentBuild.result = 'SUCCESS'
-                        error("No .mp4 files found in latest commit.")
+                    echo "📹 Checking for new or modified video files (.mp4)..."
+                    NEW_VIDEOS = sh(script: "git diff-tree --no-commit-id --name-only -r HEAD | grep .mp4 || true", returnStdout: true).trim()
+                    if (NEW_VIDEOS) {
+                        echo "📌 New video(s) detected:\n${NEW_VIDEOS}"
                     } else {
-                        echo "🎥 New video(s) detected:\n${changed}"
-                        env.NEW_VIDEOS = changed
+                        echo "✅ No new videos detected."
+                        NEW_VIDEOS = ""
                     }
                 }
             }
@@ -43,7 +32,7 @@ pipeline {
         stage('Pull Docker Image') {
             steps {
                 script {
-                    sh "docker pull ${IMAGE_NAME}"
+                    sh "docker pull ${DOCKER_IMAGE}"
                 }
             }
         }
@@ -52,11 +41,16 @@ pipeline {
             steps {
                 script {
                     echo "🚀 Starting Docker container ${CONTAINER_NAME}..."
+                    // Remove old container safely
+                    sh "docker rm -f ${CONTAINER_NAME} || true"
+
+                    // Run container with memory limit
                     sh """
-                        docker rm -f ${CONTAINER_NAME} || true
-                        docker run -d --name ${CONTAINER_NAME} \
+                    docker run -d \
+                        --name ${CONTAINER_NAME} \
                         -v ${DATA_DIR}:/app/data \
-                        ${IMAGE_NAME} \
+                        --memory=4g \
+                        ${DOCKER_IMAGE} \
                         bash -c "mkdir -p /app/data/meetings && tail -f /dev/null"
                     """
                 }
@@ -64,31 +58,27 @@ pipeline {
         }
 
         stage('Copy Videos into Container') {
+            when {
+                expression { return NEW_VIDEOS != "" }
+            }
             steps {
                 script {
-                    echo "📂 Copying detected videos into the container..."
-                    def videoFiles = env.NEW_VIDEOS.split()
-                    for (file in videoFiles) {
-                        sh "docker cp ${file} ${CONTAINER_NAME}:/app/data/meetings/"
+                    echo "📁 Copying detected videos into the container..."
+                    for (video in NEW_VIDEOS.split("\n")) {
+                        sh "docker cp ${video} ${CONTAINER_NAME}:/app/data/meetings/"
                     }
                 }
             }
         }
 
         stage('Process New Videos') {
-            steps {
-                script {
-                    echo "🧠 Processing videos inside container..."
-                    sh "docker exec ${CONTAINER_NAME} python3 scripts/process_new_videos.py"
-                }
+            when {
+                expression { return NEW_VIDEOS != "" }
             }
-        }
-
-        stage('Push Summarized Output to Salesforce') {
             steps {
                 script {
-                    echo "☁️ Uploading summarized data to Salesforce..."
-                    // You can later add integration here
+                    echo "⚙️ Processing videos inside container..."
+                    sh "docker exec ${CONTAINER_NAME} python3 scripts/process_new_videos.py"
                 }
             }
         }
@@ -97,11 +87,9 @@ pipeline {
     post {
         always {
             echo "🧹 Cleaning up Docker container..."
-            sh """
-                docker stop ${CONTAINER_NAME} || true
-                docker rm ${CONTAINER_NAME} || true
-                docker system prune -f || true
-            """
+            sh "docker stop ${CONTAINER_NAME} || true"
+            sh "docker rm ${CONTAINER_NAME} || true"
+            sh "docker system prune -f"
         }
     }
 }
