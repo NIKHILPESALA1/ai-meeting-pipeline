@@ -6,8 +6,8 @@ pipeline {
         IMAGE_TAG = "latest"
         REGISTRY = "nikhilpesala"
         FULL_IMAGE = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+        DATA_DIR = "/root/.jenkins/workspace/${JOB_NAME}/data"
         SF_INSTANCE_URL = "https://login.salesforce.com"
-        DATA_DIR = "${WORKSPACE}/data"
     }
 
     triggers {
@@ -19,10 +19,7 @@ pipeline {
         stage('Prepare Workspace') {
             steps {
                 script {
-                    // Ensure data and meetings folder exist
-                    sh """
-                        mkdir -p ${DATA_DIR}/meetings
-                    """
+                    sh "mkdir -p ${DATA_DIR}/meetings"
                 }
             }
         }
@@ -44,21 +41,20 @@ pipeline {
         }
 
         stage('Run Container') {
-    steps {
-        script {
-            sh """
-                # Remove any previous container with same name
-                docker rm -f ai_meeting_pipeline2 || true
+            steps {
+                script {
+                    sh """
+                        # Remove old container if exists
+                        docker rm -f ai_meeting_pipeline2 || true
 
-                # Run new container
-                docker run -d --name ai_meeting_pipeline2 \
-                -v ${DATA_DIR}:/app/data \
-                ${FULL_IMAGE} bash -c "tail -f /dev/null"
-            """
+                        # Run new container
+                        docker run -d --name ai_meeting_pipeline2 \
+                        -v ${DATA_DIR}:/app/data \
+                        ${FULL_IMAGE} bash -c "tail -f /dev/null"
+                    """
+                }
+            }
         }
-    }
-}
-
 
         stage('Process New Videos') {
             steps {
@@ -69,9 +65,6 @@ pipeline {
         }
 
         stage('Push Summarized Output to Salesforce') {
-            when {
-                expression { fileExists("${DATA_DIR}/summarized_output.txt") }
-            }
             environment {
                 SF_CLIENT_ID     = credentials('SF_CLIENT_ID')
                 SF_CLIENT_SECRET = credentials('SF_CLIENT_SECRET')
