@@ -21,14 +21,17 @@ WORKDIR /app
 # Copy requirements first for caching
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install PyTorch CPU first (lighter than full CUDA)
+RUN pip install --no-cache-dir torch==2.2.0+cpu --index-url https://download.pytorch.org/whl/cpu
+
+# Install the rest of the Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all scripts
+# Copy scripts
 COPY scripts/ ./scripts/
 
 # Create folders for pipeline outputs
-RUN mkdir -p /app/meetings /app/audio /app/transcripts /app/summaries /app/data
+RUN mkdir -p /app/meetings /app/audio /app/transcripts /app/summaries
 
-# Default command (runs inside Jenkins pipeline or manually)
+# Default command (runs inside Jenkins pipeline)
 CMD ["bash"]

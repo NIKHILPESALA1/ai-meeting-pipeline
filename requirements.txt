@@ -1,11 +1,9 @@
-openai-whisper==20250625
+numpy<2
 torch
-torchaudio
-transformers
 tqdm
-numpy
 more-itertools
 tiktoken
 triton
 ffmpeg-python
-requests
+openai-whisper==20250625
+transformers
