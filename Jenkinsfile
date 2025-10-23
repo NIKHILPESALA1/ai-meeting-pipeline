@@ -15,26 +15,25 @@ pipeline {
         }
 
         stage('Check for Video Changes') {
-            steps {
-                script {
-                    // Properly declare NEW_VIDEOS
-                    def NEW_VIDEOS = sh(
-                        script: "git diff-tree --no-commit-id --name-only -r HEAD | grep .mp4 || true",
-                        returnStdout: true
-                    ).trim()
-
-                    if (NEW_VIDEOS) {
-                        echo "📌 New video(s) detected:\n${NEW_VIDEOS}"
-                    } else {
-                        echo "✅ No new videos detected."
-                        NEW_VIDEOS = ""
-                    }
-
-                    // Store for later stages
-                    env.NEW_VIDEOS = NEW_VIDEOS
-                }
+    steps {
+        script {
+            echo "🔍 Checking for new or modified video files (.mp4) in data/meetings..."
+            
+            // List .mp4 files only in data/meetings/
+            def newVideos = sh(
+                script: 'git diff-tree --no-commit-id --name-only -r HEAD | grep "^data/meetings/.*\\.mp4$" || true',
+                returnStdout: true
+            ).trim()
+            
+            if (newVideos) {
+                echo "✅ New video(s) detected:\n${newVideos}"
+            } else {
+                echo "ℹ️ No new videos detected in data/meetings."
             }
         }
+    }
+}
+
 
         stage('Pull Docker Image') {
             steps {
