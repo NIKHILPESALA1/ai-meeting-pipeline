@@ -41,20 +41,21 @@ pipeline {
         }
 
         stage('Run Container') {
-            steps {
-                script {
-                    sh """
-                        # Remove old container if exists
-                        docker rm -f ai_meeting_pipeline2 || true
+    steps {
+        script {
+            sh """
+                # Remove old container if exists
+                docker rm -f ai_meeting_pipeline2 || true
 
-                        # Run new container
-                        docker run -d --name ai_meeting_pipeline2 \
-                        -v ${DATA_DIR}:/app/data \
-                        ${FULL_IMAGE} bash -c "tail -f /dev/null"
-                    """
-                }
-            }
+                # Run new container and create meetings folder inside
+                docker run -d --name ai_meeting_pipeline2 \
+                -v ${DATA_DIR}:/app/data \
+                ${FULL_IMAGE} bash -c "mkdir -p /app/data/meetings && tail -f /dev/null"
+            """
         }
+    }
+}
+
 
         stage('Process New Videos') {
             steps {
