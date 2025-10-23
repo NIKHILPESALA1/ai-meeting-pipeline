@@ -5,7 +5,6 @@ pipeline {
         CONTAINER_NAME = "ai_meeting_pipeline"
         VIDEO_DIR = "data/meetings"
         PROCESSED_DIR = "/app/data/processed"
-        NEW_VIDEOS = ""   // ✅ Make it global
     }
 
     stages {
@@ -16,36 +15,39 @@ pipeline {
         }
 
         stage('Check for New Videos') {
-    steps {
-        script {
-            echo "Checking for new or modified .mp4 files in ${VIDEO_DIR}..."
+            steps {
+                script {
+                    def videoDir = "${WORKSPACE}/${VIDEO_DIR}"
+                    def recordFile = "${WORKSPACE}/.last_videos.txt"
 
-            def prevCommit = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT ?: 'HEAD~1'
-            def currentCommit = env.GIT_COMMIT
+                    sh "mkdir -p ${videoDir}"
 
-            // Debug info
-            echo "Previous commit: ${prevCommit}"
-            echo "Current commit:  ${currentCommit}"
+                    // List current .mp4 files
+                    def currentList = sh(
+                        script: "ls ${videoDir}/*.mp4 2>/dev/null || true",
+                        returnStdout: true
+                    ).trim()
 
-            def diffOutput = sh(
-                script: "git diff --name-only ${prevCommit} ${currentCommit} | grep '\\.mp4\$' || true",
-                returnStdout: true
-            ).trim()
+                    // Read previous list
+                    def previousList = fileExists(recordFile) ? readFile(recordFile).trim() : ""
 
-            echo "Raw git diff output:\n${diffOutput}"
+                    // Find new videos
+                    def newVideos = []
+                    if (currentList) {
+                        newVideos = currentList.split('\n').findAll { !previousList.contains(it) }
+                    }
 
-            env.NEW_VIDEOS = diffOutput
-            echo "DEBUG → env.NEW_VIDEOS = '${env.NEW_VIDEOS}'"
-
-            if (!env.NEW_VIDEOS?.trim()) {
-                echo "No new videos detected. Skipping next stages."
-            } else {
-                echo "Detected new video files: ${env.NEW_VIDEOS}"
+                    if (newVideos) {
+                        env.NEW_VIDEOS = newVideos.join('\n')
+                        echo "🎥 New video(s) detected:\n${env.NEW_VIDEOS}"
+                        writeFile file: recordFile, text: currentList
+                    } else {
+                        env.NEW_VIDEOS = ""
+                        echo "No new videos found in ${videoDir}."
+                    }
+                }
             }
         }
-    }
-}
-
 
         stage('Pull Docker Image') {
             steps {
@@ -73,7 +75,7 @@ pipeline {
             steps {
                 script {
                     env.NEW_VIDEOS.split('\n').findAll { it?.trim() }.each { video ->
-                        sh "docker cp ${video} ${CONTAINER_NAME}:/app/data/meetings/"
+                        sh "docker cp '${video}' ${CONTAINER_NAME}:/app/data/meetings/"
                     }
                 }
             }
@@ -85,10 +87,9 @@ pipeline {
             }
             steps {
                 script {
-                    echo "Transcribing and summarizing new videos..."
+                    echo "🧠 Transcribing and summarizing new videos..."
                     env.NEW_VIDEOS.split('\n').findAll { it?.trim() }.each { video ->
-                        def parts = video.tokenize('/')
-                        def filename = parts[-1]
+                        def filename = video.tokenize('/').last()
                         sh "docker exec ${CONTAINER_NAME} python /app/scripts/process_new_videos.py /app/data/meetings/${filename} /app/data/processed/${filename}.json"
                     }
                 }
@@ -107,7 +108,7 @@ pipeline {
 
     post {
         always {
-            echo "Cleaning up Docker container..."
+            echo "🧹 Cleaning up Docker container..."
             sh "docker stop ${CONTAINER_NAME} || true"
             sh "docker rm ${CONTAINER_NAME} || true"
         }
