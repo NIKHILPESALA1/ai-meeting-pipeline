@@ -16,21 +16,36 @@ pipeline {
         }
 
         stage('Check for New Videos') {
-            steps {
-                script {
-                    echo "Checking for new or modified video files (.mp4) in ${VIDEO_DIR}..."
+    steps {
+        script {
+            echo "Checking for new or modified .mp4 files in ${VIDEO_DIR}..."
 
-                    def diffOutput = sh(
-                        script: "git diff --name-only ${env.GIT_PREVIOUS_SUCCESSFUL_COMMIT} ${env.GIT_COMMIT} | grep '^${VIDEO_DIR}/.*\\.mp4\$' || true",
-                        returnStdout: true
-                    ).trim()
+            def prevCommit = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT ?: 'HEAD~1'
+            def currentCommit = env.GIT_COMMIT
 
-                    echo "New video(s) detected:\n${diffOutput}"
-                    env.NEW_VIDEOS = diffOutput
-                    currentBuild.description = diffOutput ?: "No new videos"
-                }
+            // Debug info
+            echo "Previous commit: ${prevCommit}"
+            echo "Current commit:  ${currentCommit}"
+
+            def diffOutput = sh(
+                script: "git diff --name-only ${prevCommit} ${currentCommit} | grep '\\.mp4\$' || true",
+                returnStdout: true
+            ).trim()
+
+            echo "Raw git diff output:\n${diffOutput}"
+
+            env.NEW_VIDEOS = diffOutput
+            echo "DEBUG → env.NEW_VIDEOS = '${env.NEW_VIDEOS}'"
+
+            if (!env.NEW_VIDEOS?.trim()) {
+                echo "No new videos detected. Skipping next stages."
+            } else {
+                echo "Detected new video files: ${env.NEW_VIDEOS}"
             }
         }
+    }
+}
+
 
         stage('Pull Docker Image') {
             steps {
