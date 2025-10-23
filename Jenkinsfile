@@ -5,6 +5,7 @@ pipeline {
         CONTAINER_NAME = "ai_meeting_pipeline"
         VIDEO_DIR = "data/meetings"
         PROCESSED_DIR = "/app/data/processed"
+        NEW_VIDEOS = ""   // ✅ Make it global
     }
 
     stages {
@@ -17,14 +18,16 @@ pipeline {
         stage('Check for New Videos') {
             steps {
                 script {
-                    def NEW_VIDEOS = ""
                     echo "Checking for new or modified video files (.mp4) in ${VIDEO_DIR}..."
-                    NEW_VIDEOS = sh(
+
+                    def diffOutput = sh(
                         script: "git diff --name-only ${env.GIT_PREVIOUS_SUCCESSFUL_COMMIT} ${env.GIT_COMMIT} | grep '^${VIDEO_DIR}/.*\\.mp4\$' || true",
                         returnStdout: true
                     ).trim()
-                    echo "New video(s) detected:\n${NEW_VIDEOS}"
-                    currentBuild.description = NEW_VIDEOS ?: "No new videos"
+
+                    echo "New video(s) detected:\n${diffOutput}"
+                    env.NEW_VIDEOS = diffOutput
+                    currentBuild.description = diffOutput ?: "No new videos"
                 }
             }
         }
@@ -50,11 +53,11 @@ pipeline {
 
         stage('Copy Videos into Container') {
             when {
-                expression { return NEW_VIDEOS?.trim() }
+                expression { return env.NEW_VIDEOS?.trim() }
             }
             steps {
                 script {
-                    NEW_VIDEOS.split('\n').findAll { it?.trim() }.each { video ->
+                    env.NEW_VIDEOS.split('\n').findAll { it?.trim() }.each { video ->
                         sh "docker cp ${video} ${CONTAINER_NAME}:/app/data/meetings/"
                     }
                 }
@@ -63,14 +66,14 @@ pipeline {
 
         stage('Transcribe and Summarize') {
             when {
-                expression { return NEW_VIDEOS?.trim() }
+                expression { return env.NEW_VIDEOS?.trim() }
             }
             steps {
                 script {
                     echo "Transcribing and summarizing new videos..."
-                    NEW_VIDEOS.split('\n').findAll { it?.trim() }.each { video ->
+                    env.NEW_VIDEOS.split('\n').findAll { it?.trim() }.each { video ->
                         def parts = video.tokenize('/')
-                        def filename = parts[parts.size() - 1]
+                        def filename = parts[-1]
                         sh "docker exec ${CONTAINER_NAME} python /app/scripts/process_new_videos.py /app/data/meetings/${filename} /app/data/processed/${filename}.json"
                     }
                 }
@@ -79,7 +82,7 @@ pipeline {
 
         stage('Push Summarized Output to Salesforce') {
             when {
-                expression { return NEW_VIDEOS?.trim() }
+                expression { return env.NEW_VIDEOS?.trim() }
             }
             steps {
                 sh "docker exec ${CONTAINER_NAME} python /app/scripts/push_to_salesforce.py ${PROCESSED_DIR}"
